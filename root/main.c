@@ -1,351 +1,722 @@
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <libgen.h>
+#ifdef HAVE_SETLOCALE
+#include <locale.h>
+#endif
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+#ifdef WIN32
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#include <processenv.h>
+#include <shellapi.h>
+#include <wchar.h>
+#include <wtypes.h>
+extern void jv_tsd_dtoa_ctx_init();
+#endif
+
+#ifdef HAVE_LIBONIG
+#include <oniguruma.h>
+#endif
+
+#if !defined(HAVE_ISATTY) && defined(HAVE__ISATTY)
+#undef isatty
+#define isatty _isatty
+#endif
+
+#if defined(HAVE_ISATTY) || defined(HAVE__ISATTY)
+#define USE_ISATTY
+#endif
+
+#include "jv.h"
+#include "jq.h"
+#include "util.h"
+#include "src/version.h"
+#include "src/config_opts.inc"
+
+int jq_testsuite(jv lib_dirs, int verbose, int argc, char* argv[]);
+
 /*
-   This file is provided under the LGPL license ver 2.1.
-   Written by K.Tanaka & Katsumi
-   http://www.ze.em-net.ne.jp/~kenken/index.html
-   http://hp.vector.co.jp/authors/VA016157/
-*/
+ * For a longer help message we could use a better option parsing
+ * strategy, one that lets stack options.
+ */
+static void usage(int code, int keep_it_short) {
+  FILE *f = stderr;
 
-// Using following libraries
-// ps2keyboard370f.X.a : PS/2 keyboard input
-// lib_videoout_megalopa.X.a : NTFS color video
-// sdfsio370fLib.a ÅF SD/MMC card file system
+  if (code == 0)
+    f = stdout;
 
-/*
-	PIC32MX peripheral assignment
-	
-	Interrupts
-		NTSC,   Timer2, vector  8, priority 5
-		NTSC,   OC5,    vector 22, priority 5
-		NTSC,   OC2,    vector 10, priority 5
-		NTSC,   OC1,    vector  6, priority 5
-		PS/2,   CNF,    vector 33, priority 6
-		PS/2,   Timer5, vector 20, priority 4
-		MUSIC,  CS0,    vector  1, priority 2
-		SERIAL, UART,   vector 31, priority 3
-		TIMER,  Timer1, vector  4, priority 3
-		INT,    CS1,    vector  2, priority 1
-	
-	Timers
-		Timer1 not used
-		Timer2 NTSC
-		Timer3 not used
-		Timer4 not used
-		Timer5 PS/2
-	
-	DMA
-		DMA0 not used
-		DMA1 not used
-		DMA2 not used
-		DMA3 PS/2
-	
-	Output compair
-		OC1 NTSC
-		OC2 NTSC
-		OC3 not used
-		OC4 not used
-		OC5 NTSC
-	
-	UART
-		UART1 not used
-		UART2 not used
-	
-	SPI
-		SPI1 not used
-		SPI2 SD/MMC
-	
-	I2C
-		I2C1 not used
-		I2C2 not used
-	
-	Port asignment
-		B0  I/O, AN0
-		B1  I/O, AN1
-		B2  I/O, AN2
-		B3  I/O, AN3
-		B4  I/O, AN4
-		B5  I/O, AN5
-		B6  I/O, AN6
-		B7  I/O, AN7
-		B8  I/O, AN8
-		B9  I/O, AN9
-		B10 I/O, AN10
-		B11 I/O, AN11
-		B12 I/O, AN12
-		B13 I/O, AN13
-		B14 I/O, AN14
-		B15 I/O, AN15
-		C12 OSC1 (Crystal)
-		C13 U1TX (UART)
-		C14 U1RX (UART)
-		C15 OSC2 (Crystal)
-		D0  SW_DOWN
-		D1  SW_LEFT
-		D2  SW_UP
-		D3  SW_RIGHT
-		D4  SW_START
-		D5  SW_FIRE
-		D6  
-		D7  
-		D8  
-		D9  SPI1_CS (SPI)
-		D10 PWM1
-		D11 PWM2
-		E0  NTSC
-		E1  NTSC
-		E2  NTSC
-		E3  NTSC
-		E4  NTSC
-		E5  I/O, AN22
-		E6  I/O, AN23
-		E7  I/O, AN27
-		F0  PS/2 DAT
-		F1  PS/2 CLK
-		F2  SDI1 (SPI)
-		F3  SPI2_CS (MMC)
-		F4  AUDIO_R
-		F5  AUDIO_L
-		F6  SCK1 (SPI)
-		G2  SCL1 (I2C)
-		G3  SDA1 (I2C)
-		G6  SCK2 (MMC)
-		G7  SDI2 (MMC)
-		G8  SDO2 (MMC)
-		G9  SDO1 (SPI)
-*/
-
-#include <xc.h>
-#include "api.h"
-#include "main.h"
-
-// Using crystal with PLL (20/3)
-// 3.579545Å~4ÅÅ14.31818MHz
-// CPU clock is 95454533.33 Hz
-// Coretime clock is ~47727267 Hz
-#pragma config FSRSSEL = PRIORITY_7
-#pragma config PMDL1WAY = OFF
-#pragma config IOL1WAY = OFF
-//#pragma config FUSBIDIO = OFF
-//#pragma config FVBUSONIO = OFF
-#pragma config FPLLIDIV = DIV_3
-#pragma config FPLLMUL = MUL_20
-//#pragma config UPLLIDIV = DIV_1
-//#pragma config UPLLEN = OFF
-#pragma config FPLLODIV = DIV_1
-#pragma config FNOSC = PRIPLL
-#pragma config FSOSCEN = OFF
-#pragma config IESO = OFF
-#pragma config POSCMOD = XT
-#pragma config OSCIOFNC = OFF
-#pragma config FPBDIV = DIV_1
-#pragma config FCKSM = CSDCMD
-#pragma config FWDTEN = OFF
-#pragma config DEBUG = OFF
-#pragma config PWP = OFF
-#pragma config BWP = OFF
-#pragma config CP = OFF
-
-unsigned char initialvmode;
-
-void printhex8(unsigned char d){
-	printchar("0123456789ABCDEF"[d>>4]);
-	printchar("0123456789ABCDEF"[d&0x0f]);	
+  int ret = fprintf(f,
+    "jq - commandline JSON processor [version %s]\n"
+    "\nUsage:\tjq [options] <jq filter> [file...]\n"
+    "\tjq [options] --args <jq filter> [strings...]\n"
+    "\tjq [options] --jsonargs <jq filter> [JSON_TEXTS...]\n\n"
+    "jq is a tool for processing JSON inputs, applying the given filter to\n"
+    "its JSON text inputs and producing the filter's results as JSON on\n"
+    "standard output.\n\n"
+    "The simplest filter is ., which copies jq's input to its output\n"
+    "unmodified except for formatting. For more advanced filters see\n"
+    "the jq(1) manpage (\"man jq\") and/or https://jqlang.org/.\n\n"
+    "Example:\n\n\t$ echo '{\"foo\": 0}' | jq .\n"
+    "\t{\n\t  \"foo\": 0\n\t}\n\n", JQ_VERSION);
+  if (keep_it_short) {
+    fprintf(f, "For listing the command options, use jq --help.\n");
+  } else {
+    (void) fprintf(f,
+      "Command options:\n"
+      "  -n, --null-input          use `null` as the single input value;\n"
+      "  -R, --raw-input           read each line as string instead of JSON;\n"
+      "  -s, --slurp               read all inputs into an array and use it as\n"
+      "                            the single input value;\n"
+      "  -c, --compact-output      compact instead of pretty-printed output;\n"
+      "  -r, --raw-output          output strings without escapes and quotes;\n"
+      "      --raw-output0         implies -r and output NUL after each output;\n"
+      "  -j, --join-output         implies -r and output without newline after\n"
+      "                            each output;\n"
+      "  -a, --ascii-output        output strings by only ASCII characters\n"
+      "                            using escape sequences;\n"
+      "  -S, --sort-keys           sort keys of each object on output;\n"
+      "  -C, --color-output        colorize JSON output;\n"
+      "  -M, --monochrome-output   disable colored output;\n"
+      "      --tab                 use tabs for indentation;\n"
+      "      --indent n            use n spaces for indentation (max 7 spaces);\n"
+      "      --unbuffered          flush output stream after each output;\n"
+      "      --stream              parse the input value in streaming fashion;\n"
+      "      --stream-errors       implies --stream and report parse error as\n"
+      "                            an array;\n"
+      "      --seq                 parse input/output as application/json-seq;\n"
+      "  -f, --from-file           load the filter from a file;\n"
+      "  -L, --library-path dir    search modules from the directory;\n"
+      "      --arg name value      set $name to the string value;\n"
+      "      --argjson name value  set $name to the JSON value;\n"
+      "      --slurpfile name file set $name to an array of JSON values read\n"
+      "                            from the file;\n"
+      "      --rawfile name file   set $name to string contents of file;\n"
+      "      --args                consume remaining arguments as positional\n"
+      "                            string values;\n"
+      "      --jsonargs            consume remaining arguments as positional\n"
+      "                            JSON values;\n"
+      "  -e, --exit-status         set exit status code based on the output;\n"
+#ifdef WIN32
+      "  -b, --binary              open input/output streams in binary mode;\n"
+#endif
+      "  -V, --version             show the version;\n"
+      "  --build-configuration     show jq's build configuration;\n"
+      "  -h, --help                show the help;\n"
+      "  --                        terminates argument processing;\n\n"
+      "Named arguments are also available as $ARGS.named[], while\n"
+      "positional arguments are available as $ARGS.positional[].\n");
+  }
+  exit((ret < 0 && code == 0) ? 2 : code);
 }
 
-void printhex16(unsigned short d){
-	printhex8(d>>8);
-	printhex8(d&0x00ff);
+static void die(void) {
+  fprintf(stderr, "Use jq --help for help with command-line options,\n");
+  fprintf(stderr, "or see the jq manpage, or online docs at https://jqlang.org\n");
+  exit(2);
 }
 
-void printhex32(unsigned int d){
-	printhex16(d>>16);
-	printhex16(d&0x0000ffff);
+static int isoptish(const char* text) {
+  return text[0] == '-' && (text[1] == '-' || isalpha((unsigned char)text[1]));
 }
 
-void wait60thsec(unsigned short n){
-	n+=drawcount;
-	while(drawcount!=n) asm("wait");
+static int isoption(const char** text, char shortopt, const char* longopt, int is_short) {
+  if (is_short) {
+    if (shortopt && **text == shortopt) {
+      (*text)++;
+      if (!**text) *text = NULL;
+      return 1;
+    }
+  } else {
+    if (!strcmp(*text, longopt)) {
+      *text = NULL;
+      return 1;
+    }
+  }
+  return 0;
 }
 
-int coretimer(void){ 
-	return _CP0_GET_COUNT();
+enum {
+  SLURP                 = 1,
+  RAW_INPUT             = 2,
+  PROVIDE_NULL          = 4,
+  RAW_OUTPUT            = 8,
+  RAW_OUTPUT0           = 16,
+  ASCII_OUTPUT          = 32,
+  COLOR_OUTPUT          = 64,
+  NO_COLOR_OUTPUT       = 128,
+  SORTED_OUTPUT         = 256,
+  FROM_FILE             = 512,
+  RAW_NO_LF             = 1024,
+  UNBUFFERED_OUTPUT     = 2048,
+  EXIT_STATUS           = 4096,
+  SEQ                   = 16384,
+  /* debugging only */
+  DUMP_DISASM           = 32768,
+};
+
+enum {
+    JQ_OK              =  0,
+    JQ_OK_NULL_KIND    = -1, /* exit 0 if --exit-status is not set*/
+    JQ_ERROR_SYSTEM    =  2,
+    JQ_ERROR_COMPILE   =  3,
+    JQ_OK_NO_OUTPUT    = -4, /* exit 0 if --exit-status is not set*/
+    JQ_ERROR_UNKNOWN   =  5,
+};
+#define jq_exit_with_status(r)  exit(abs(r))
+#define jq_exit(r)              exit( r > 0 ? r : 0 )
+
+static int process(jq_state *jq, jv value, int flags, int dumpopts, int options) {
+  int ret = JQ_OK_NO_OUTPUT; // No valid results && -e -> exit(4)
+  jq_start(jq, value, flags);
+  jv result;
+  while (jv_is_valid(result = jq_next(jq))) {
+    if ((options & RAW_OUTPUT) && jv_get_kind(result) == JV_KIND_STRING) {
+      if (options & ASCII_OUTPUT) {
+        jv_dumpf(jv_copy(result), stdout, JV_PRINT_ASCII);
+      } else if ((options & RAW_OUTPUT0) && strlen(jv_string_value(result)) != (unsigned long)jv_string_length_bytes(jv_copy(result))) {
+        jv_free(result);
+        result = jv_invalid_with_msg(jv_string(
+              "Cannot dump a string containing NUL with --raw-output0 option"));
+        break;
+      } else {
+        priv_fwrite(jv_string_value(result), jv_string_length_bytes(jv_copy(result)),
+            stdout, dumpopts & JV_PRINT_ISATTY);
+      }
+      ret = JQ_OK;
+      jv_free(result);
+    } else {
+      if (jv_get_kind(result) == JV_KIND_FALSE || jv_get_kind(result) == JV_KIND_NULL)
+        ret = JQ_OK_NULL_KIND;
+      else
+        ret = JQ_OK;
+      if (options & SEQ)
+        priv_fwrite("\036", 1, stdout, dumpopts & JV_PRINT_ISATTY);
+      jv_dump(result, dumpopts);
+    }
+    if (!(options & RAW_NO_LF))
+      priv_fwrite("\n", 1, stdout, dumpopts & JV_PRINT_ISATTY);
+    if (options & RAW_OUTPUT0)
+      priv_fwrite("\0", 1, stdout, dumpopts & JV_PRINT_ISATTY);
+    if (options & UNBUFFERED_OUTPUT)
+      fflush(stdout);
+  }
+  if (jq_halted(jq)) {
+    // jq program invoked `halt` or `halt_error`
+    jv exit_code = jq_get_exit_code(jq);
+    if (!jv_is_valid(exit_code))
+      ret = JQ_OK;
+    else if (jv_get_kind(exit_code) == JV_KIND_NUMBER)
+      ret = jv_number_value(exit_code);
+    else
+      ret = JQ_ERROR_UNKNOWN;
+    jv_free(exit_code);
+    jv error_message = jq_get_error_message(jq);
+    if (jv_get_kind(error_message) == JV_KIND_STRING) {
+      // No prefix should be added to the output of `halt_error`.
+      priv_fwrite(jv_string_value(error_message), jv_string_length_bytes(jv_copy(error_message)),
+          stderr, dumpopts & JV_PRINT_ISATTY);
+    } else if (jv_get_kind(error_message) == JV_KIND_NULL) {
+      // Halt with no output
+    } else if (jv_is_valid(error_message)) {
+      error_message = jv_dump_string(error_message, 0);
+      fprintf(stderr, "%s\n", jv_string_value(error_message));
+    } // else no message on stderr; use --debug-trace to see a message
+    fflush(stderr);
+    jv_free(error_message);
+  } else if (jv_invalid_has_msg(jv_copy(result))) {
+    // Uncaught jq exception
+    jv msg = jv_invalid_get_msg(jv_copy(result));
+    jv input_pos = jq_util_input_get_position(jq);
+    if (jv_get_kind(msg) == JV_KIND_STRING) {
+      fprintf(stderr, "jq: error (at %s): %s\n",
+              jv_string_value(input_pos), jv_string_value(msg));
+    } else {
+      msg = jv_dump_string(msg, 0);
+      fprintf(stderr, "jq: error (at %s) (not a string): %s\n",
+              jv_string_value(input_pos), jv_string_value(msg));
+    }
+    ret = JQ_ERROR_UNKNOWN;
+    jv_free(input_pos);
+    jv_free(msg);
+  }
+  jv_free(result);
+  return ret;
 }
 
-void wait_msec(int msec){
-	int endtime=coretimer()+msec*47727;
-	while(0<(endtime-(int)coretimer()));
+static void debug_cb(void *data, jv input) {
+  int dumpopts = *(int *)data;
+  jv_dumpf(JV_ARRAY(jv_string("DEBUG:"), input), stderr, dumpopts & ~(JV_PRINT_PRETTY));
+  fprintf(stderr, "\n");
 }
 
-unsigned char nextIs(unsigned char* str,int point){
-	unsigned char i;
-	// Skip blank
-	for(i=0;0x20==RAM[point+i];i++);
-	// Check
-	while(str[0]){
-		if (str[0]!=RAM[point+i]) return 0;
-		str++;
-		i++;
-	}
-	// All done
-	return i;
+static void stderr_cb(void *data, jv input) {
+  if (jv_get_kind(input) == JV_KIND_STRING) {
+    int dumpopts = *(int *)data;
+    priv_fwrite(jv_string_value(input), jv_string_length_bytes(jv_copy(input)),
+        stderr, dumpopts & JV_PRINT_ISATTY);
+  } else {
+    input = jv_dump_string(input, 0);
+    fprintf(stderr, "%s", jv_string_value(input));
+  }
+  jv_free(input);
 }
 
-void init_file(void){
-	int i,point,end;
-	unsigned char c;
-	FSFILE* fhandle;
-	// Read ini file to RAM area
-	fhandle=FSfopen("fzkmmega.ini","r");
-	if (!fhandle) return;
-	end=0xbc00+FSfread(&RAM[0xbc00],1,0x2400,fhandle);
-	FSfclose(fhandle);
-	// All Upper cases. 0x0d to 0x0a. Tab to space
-	for(point=0xbc00;point<end;point++){
-		c=RAM[point];
-		if ('a'<=c && c<='z') RAM[point]=c-0x20;
-		else if (0x0d==c) RAM[point]=0x0a;
-		else if (0x09==c) RAM[point]=0x20;
-	}
-	// Explore
-	point=0xbc00;
-	while(point<end){
-		// Check if comment
-		if ('#'!=RAM[point]) {
-			// Check NUMLOCK
-			if (c=nextIs("NUMLOCK ",point)) {
-				point+=c;
-				if (c=nextIs("ON",point)) {
-					point+=c;
-					lockkey=2;
-				} else if (c=nextIs("OFF",point)) {
-					point+=c;
-					lockkey=0;
-				}
-			// Check DISKFILE
-			} else if (c=nextIs("DISKFILE ",point)) {
-				point+=c;
-				// Skip blank
-				while(point<end && 0x20==RAM[point]) point++;
-				// Set the file name
-				for(i=0;i<12;i++) {
-					if ((g_ide_filename[i]=RAM[point++])<0x21) break;
-				}
-				g_ide_filename[i]=0;
-			// Check KEYBOARD
-			} else if (c=nextIs("KEYBOARD ",point)) {
-				point+=c;
-				if (c=nextIs("106",point)) {
-					point+=c;
-					keytype=0; // JP keyboard
-				} else if (c=nextIs("101",point)) {
-					point+=c;
-					keytype=1; // US keyboard
-				}
-			// Check WIDTH
-			} else if (c=nextIs("WIDTH ",point)) {
-				point+=c;
-				if (c=nextIs("30",point)) {
-					point+=c;
-					set_videomode(VMODE_T30,0);
-				} else if (c=nextIs("36",point)) {
-					point+=c;
-					set_videomode(VMODE_STDTEXT,0);
-				} else if (c=nextIs("40",point)) {
-					point+=c;
-					set_videomode(VMODE_T40,0);
-				} else if (c=nextIs("48",point)) {
-					point+=c;
-					set_videomode(VMODE_WIDETEXT,0);
-				} else if (c=nextIs("64",point)) {
-					point+=c;
-					set_videomode(VMODE_WIDETEXT6dot,0);
-				}
-			}
-		}
-		// Go to next line
-		while(point<end && 0x0a!=RAM[point++]);
-		// Skip blank line
-		while(point<end && 0x0a==RAM[point]) point++;
-	}
+#ifdef WIN32
+int umain(int argc, char* argv[]);
+
+int wmain(int argc, wchar_t* wargv[]) {
+  size_t arg_sz;
+  char **argv = alloca(argc * sizeof(wchar_t*));
+  for (int i = 0; i < argc; i++) {
+    argv[i] = alloca((arg_sz = WideCharToMultiByte(CP_UTF8,
+                                                   0,
+                                                   wargv[i],
+                                                   -1, 0, 0, 0, 0)));
+    WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, argv[i], arg_sz, 0, 0);
+  }
+  return umain(argc, argv);
 }
 
-int main(void){
-	char ascii, cursorchar, blinktimer;
-	int i;
+int umain(int argc, char* argv[]) {
+#else /*}*/
+int main(int argc, char* argv[]) {
+#endif
+  jq_state *jq = NULL;
+  jq_util_input_state *input_state = NULL;
+  int ret = JQ_OK_NO_OUTPUT;
+  int compiled = 0;
+  int parser_flags = 0;
+  int nfiles = 0;
+  int last_result = -1; /* -1 = no result, 0=null or false, 1=true */
+  int badwrite;
+  int options = 0;
 
-	// Port initializations
-	CNPUB = 0xFFFF; // PORTB all pull up (I/O)
-	TRISB = 0xFFFF; // PORTB all input
-	CNPUC = 0x4000; // PORTC14 pull up (U1RX)
-	TRISC = 0x4000; // PORTC14 output but input for everything else
-	TRISD = KEYSTART | KEYFIRE | KEYUP | KEYDOWN | KEYLEFT | KEYRIGHT;// input from button port
-	CNPUE = 0x00E0; // PORTE5-7 pull up (I/O)
-	TRISE = 0x00E0; // PORTE0-4 output 5-7 inputì¸óÕ
-	CNPUF = 0x0004; // PORTF2 pull up (SDI1)
-	TRISF = 0x0004; // PORTF2 input but output for everthing else
-	TRISG = 0x0080; // PORTG7 input but output for everything else
+#ifdef HAVE_SETLOCALE
+  (void) setlocale(LC_ALL, "");
+#endif
 
-	ANSELB = 0x0000; // all digital
-	ANSELD = 0x0000; // all digital
-	ANSELE = 0x0000; // all digital
-	ANSELG = 0x0000; // all digital
-	CNPUDSET=KEYSTART | KEYFIRE | KEYUP | KEYDOWN | KEYLEFT | KEYRIGHT;// pull up
-	CNPUFSET=0x0004; // PORTF2 (SDI1)
-	ODCF = 0x0003;	//RF0,RF1: open drain
-	ODCG = 0x000c;//RG2,RG3: open drain
-	LATGSET = 0x000c;
+#ifdef HAVE_LIBONIG
+  // use a lower regex parse depth limit than the default (4096) to protect
+  // from stack-overflows
+  // https://github.com/jqlang/jq/security/advisories/GHSA-f946-j5j2-4w5m
+  onig_set_parse_depth_limit(1024);
+#endif
 
-	// peripheral pin asignment
-	SDI2R = 1; //RPG7: SDI2
-	RPG8R = 6; //RPG8: SDO2
+#ifdef __OpenBSD__
+  if (pledge("stdio rpath", NULL) == -1) {
+    perror("pledge");
+    exit(JQ_ERROR_SYSTEM);
+  }
+#endif
 
-	init_composite(); // Initialize video
-	set_videomode(VMODE_MONOTEXT,0); // 80 characters mode
-	setcursor(0,0,7);
+#ifdef WIN32
+  jv_tsd_dtoa_ctx_init();
+  fflush(stdout);
+  fflush(stderr);
+  _setmode(fileno(stdout), _O_TEXT | _O_U8TEXT);
+  _setmode(fileno(stderr), _O_TEXT | _O_U8TEXT);
+#endif
 
-	blue_screen();
+  jv ARGS = jv_array(); /* positional arguments */
+  jv program_arguments = jv_object(); /* named arguments */
 
-	printstr("MachiKania type M console\n");
-	printstr("NTSC 80 x 27 character display and PS/2 keyboard\n");
-	printstr("Copyright (c) 2015-2019 Kenken\n");
-	printstr("Copyright (c) 2016-2020 Katsumi\n");
-	printstr("Init File System...");
-	// Initialize the File System
-	if(!FSInit()){ // Initialize file system
-		printstr("\nFile System Error\n");
-		printstr("Insert Correct Card\n");
-		printstr("And Reset\n");
-		while(1) asm("wait");
-	}
-	printstr("OK\n");
-	wait60thsec(30); 
+  jq = jq_init();
+  if (jq == NULL) {
+    perror("jq_init");
+    ret = JQ_ERROR_SYSTEM;
+    goto out;
+  }
 
-	lockkey=2; // NumLock
-	keytype=0; // JP key board
+  int dumpopts = JV_PRINT_INDENT_FLAGS(2);
+  const char* program = 0;
 
-	// Read ini file
-	init_file();
+  input_state = jq_util_input_init(NULL, NULL); // XXX add err_cb
 
-	printstr("Init PS/2...");
-	wait60thsec(30); 
-	if(ps2init()){ // Initialize PS/2
-		printstr("Keyboard Not Found\n");
-	} else {
-		printstr("OK\n");
-	}
+  int further_args_are_strings = 0;
+  int further_args_are_json = 0;
+  int args_done = 0;
+  int jq_flags = 0;
+  jv lib_search_paths = jv_null();
+  for (int i=1; i<argc; i++) {
+    if (args_done || !isoptish(argv[i])) {
+      if (!program) {
+        program = argv[i];
+      } else if (further_args_are_strings) {
+        ARGS = jv_array_append(ARGS, jv_string(argv[i]));
+      } else if (further_args_are_json) {
+        jv v =  jv_parse(argv[i]);
+        if (!jv_is_valid(v)) {
+          fprintf(stderr, "jq: invalid JSON text passed to --jsonargs\n");
+          die();
+        }
+        ARGS = jv_array_append(ARGS, v);
+      } else {
+        jq_util_input_add_input(input_state, argv[i]);
+        nfiles++;
+      }
+    } else if (!strcmp(argv[i], "--")) {
+      args_done = 1;
+    } else {
+      const char* text = argv[i];
+      int is_short;
+      // First '-' already checked by isoptish
+      if (text[1] == '-') {
+        text += 2;
+        is_short = 0;
+      } else {
+        text++;
+        is_short = 1;
+      }
+      int raw; // Temporary for --rawfile
 
-	// Initilize peripheral
-	peripheral_init();
+      // Parse a long option in one iteration or iterate over short options
+      while (text != NULL) {
+        if (isoption(&text, 's', "slurp", is_short)) {
+          options |= SLURP;
+        } else if (isoption(&text, 'r', "raw-output", is_short)) {
+          options |= RAW_OUTPUT;
+        } else if (isoption(&text, 0, "raw-output0", is_short)) {
+          options |= RAW_OUTPUT | RAW_NO_LF | RAW_OUTPUT0;
+        } else if (isoption(&text, 'j', "join-output", is_short)) {
+          options |= RAW_OUTPUT | RAW_NO_LF;
+        } else if (isoption(&text, 'c', "compact-output", is_short)) {
+          dumpopts &= ~(JV_PRINT_TAB | JV_PRINT_INDENT_FLAGS(7));
+        } else if (isoption(&text, 'C', "color-output", is_short)) {
+          options |= COLOR_OUTPUT;
+        } else if (isoption(&text, 'M', "monochrome-output", is_short)) {
+          options |= NO_COLOR_OUTPUT;
+        } else if (isoption(&text, 'a', "ascii-output", is_short)) {
+          options |= ASCII_OUTPUT;
+        } else if (isoption(&text, 0, "unbuffered", is_short)) {
+          options |= UNBUFFERED_OUTPUT;
+        } else if (isoption(&text, 'S', "sort-keys", is_short)) {
+          options |= SORTED_OUTPUT;
+        } else if (isoption(&text, 'R', "raw-input", is_short)) {
+          options |= RAW_INPUT;
+        } else if (isoption(&text, 'n', "null-input", is_short)) {
+          options |= PROVIDE_NULL;
+        } else if (isoption(&text, 'f', "from-file", is_short)) {
+          options |= FROM_FILE;
+        } else if (isoption(&text, 'L', "library-path", is_short)) {
+          if (jv_get_kind(lib_search_paths) == JV_KIND_NULL)
+            lib_search_paths = jv_array();
+          if (text != NULL) { // -Lname
+            lib_search_paths = jv_array_append(lib_search_paths, jq_realpath(jv_string(text)));
+            text = NULL;
+          } else if (i >= argc - 1) {
+            fprintf(stderr, "-L takes a parameter: (e.g. -L /search/path or -L/search/path)\n");
+            die();
+          } else {
+            lib_search_paths = jv_array_append(lib_search_paths, jq_realpath(jv_string(argv[i+1])));
+            i++;
+          }
+        } else if (isoption(&text, 'b', "binary", is_short)) {
+#ifdef WIN32
+          fflush(stdout);
+          fflush(stderr);
+          _setmode(fileno(stdin),  _O_BINARY);
+          _setmode(fileno(stdout), _O_BINARY);
+          _setmode(fileno(stderr), _O_BINARY);
+#endif
+        } else if (isoption(&text, 0, "tab", is_short)) {
+          dumpopts &= ~JV_PRINT_INDENT_FLAGS(7);
+          dumpopts |= JV_PRINT_TAB | JV_PRINT_PRETTY;
+        } else if (isoption(&text, 0, "indent", is_short)) {
+          if (i >= argc - 1) {
+            fprintf(stderr, "jq: --indent takes one parameter\n");
+            die();
+          }
+          char* end = NULL;
+          errno = 0;
+          long indent = strtol(argv[i+1], &end, 10);
+          if (errno || indent < -1 || indent > 7 ||
+              isspace(*argv[i+1]) || end == argv[i+1] || *end) {
+            fprintf(stderr, "jq: --indent takes a number between -1 and 7\n");
+            die();
+          }
+          dumpopts &= ~(JV_PRINT_TAB | JV_PRINT_INDENT_FLAGS(7));
+          dumpopts |= JV_PRINT_INDENT_FLAGS(indent);
+          i++;
+        } else if (isoption(&text, 0, "seq", is_short)) {
+          options |= SEQ;
+        } else if (isoption(&text, 0, "stream", is_short)) {
+          parser_flags |= JV_PARSE_STREAMING;
+        } else if (isoption(&text, 0, "stream-errors", is_short)) {
+          parser_flags |= JV_PARSE_STREAMING | JV_PARSE_STREAM_ERRORS;
+        } else if (isoption(&text, 'e', "exit-status", is_short)) {
+          options |= EXIT_STATUS;
+        } else if (isoption(&text, 0, "args", is_short)) {
+          further_args_are_strings = 1;
+          further_args_are_json = 0;
+        } else if (isoption(&text, 0, "jsonargs", is_short)) {
+          further_args_are_strings = 0;
+          further_args_are_json = 1;
+        } else if (isoption(&text, 0, "arg", is_short)) {
+          if (i >= argc - 2) {
+            fprintf(stderr, "jq: --arg takes two parameters (e.g. --arg varname value)\n");
+            die();
+          }
+          if (!jv_object_has(jv_copy(program_arguments), jv_string(argv[i+1])))
+            program_arguments = jv_object_set(program_arguments, jv_string(argv[i+1]), jv_string(argv[i+2]));
+          i += 2; // skip the next two arguments
+        } else if (isoption(&text, 0, "argjson", is_short)) {
+          if (i >= argc - 2) {
+            fprintf(stderr, "jq: --argjson takes two parameters (e.g. --argjson varname text)\n");
+            die();
+          }
+          if (!jv_object_has(jv_copy(program_arguments), jv_string(argv[i+1]))) {
+            jv v = jv_parse(argv[i+2]);
+            if (!jv_is_valid(v)) {
+              fprintf(stderr, "jq: invalid JSON text passed to --argjson\n");
+              die();
+            }
+            program_arguments = jv_object_set(program_arguments, jv_string(argv[i+1]), v);
+          }
+          i += 2; // skip the next two arguments
+        } else if ((raw = isoption(&text, 0, "rawfile", is_short)) ||
+            isoption(&text, 0, "slurpfile", is_short)) {
+          const char *which = raw ? "rawfile" : "slurpfile";
+          if (i >= argc - 2) {
+            fprintf(stderr, "jq: --%s takes two parameters (e.g. --%s varname filename)\n", which, which);
+            die();
+          }
+          if (!jv_object_has(jv_copy(program_arguments), jv_string(argv[i+1]))) {
+            jv data = jv_load_file(argv[i+2], raw);
+            if (!jv_is_valid(data)) {
+              data = jv_invalid_get_msg(data);
+              fprintf(stderr, "jq: Bad JSON in --%s %s %s: %s\n", which,
+                      argv[i+1], argv[i+2], jv_string_value(data));
+              jv_free(data);
+              ret = JQ_ERROR_SYSTEM;
+              goto out;
+            }
+            program_arguments = jv_object_set(program_arguments, jv_string(argv[i+1]), data);
+          }
+          i += 2; // skip the next two arguments
+        } else if (isoption(&text,  0,  "debug-dump-disasm", is_short)) {
+          options |= DUMP_DISASM;
+        } else if (isoption(&text,  0,  "debug-trace=all", is_short)) {
+          jq_flags |= JQ_DEBUG_TRACE_ALL;
+        } else if (isoption(&text,  0,  "debug-trace", is_short)) {
+          jq_flags |= JQ_DEBUG_TRACE;
+        } else if (isoption(&text, 'h', "help", is_short)) {
+          usage(0, 0);
+        } else if (isoption(&text, 'V', "version", is_short)) {
+          printf("jq-%s\n", JQ_VERSION);
+          ret = JQ_OK;
+          goto out;
+        } else if (isoption(&text, 0, "build-configuration", is_short)) {
+          printf("%s\n", JQ_CONFIG);
+          ret = JQ_OK;
+          goto out;
+        } else if (isoption(&text, 0, "run-tests", is_short)) {
+          i++;
+          // XXX Pass program_arguments, even a whole jq_state *, through;
+          // could be useful for testing
+          ret = jq_testsuite(lib_search_paths,
+                             (options & DUMP_DISASM) || (jq_flags & JQ_DEBUG_TRACE),
+                             argc - i, argv + i);
+          goto out;
+        } else {
+          if (is_short) {
+            fprintf(stderr, "jq: Unknown option -%c\n", text[0]);
+          } else {
+            fprintf(stderr, "jq: Unknown option --%s\n", text);
+          }
+          die();
+        }
+      }
+    }
+  }
 
-	// Initialize IDE
-	ide_init();
+#ifdef USE_ISATTY
+  if (isatty(STDOUT_FILENO)) {
+#ifndef WIN32
+    dumpopts |= JV_PRINT_ISATTY | JV_PRINT_COLOR;
+#else
+  /* Verify we actually have the console, as the NUL device is also regarded as
+     tty.  Windows can handle color if ANSICON (or ConEmu) is installed, or
+     Windows 10 supports the virtual terminal */
+    DWORD mode;
+    HANDLE con = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (GetConsoleMode(con, &mode)) {
+      dumpopts |= JV_PRINT_ISATTY;
+      if (getenv("ANSICON") != NULL ||
+          SetConsoleMode(con, mode | 4/*ENABLE_VIRTUAL_TERMINAL_PROCESSING*/))
+        dumpopts |= JV_PRINT_COLOR;
+    }
+#endif
+    if (dumpopts & JV_PRINT_COLOR) {
+      char *no_color = getenv("NO_COLOR");
+      if (no_color != NULL && no_color[0] != '\0')
+        dumpopts &= ~JV_PRINT_COLOR;
+    }
+  }
+#endif
+  if (options & SORTED_OUTPUT) dumpopts |= JV_PRINT_SORTED;
+  if (options & ASCII_OUTPUT) dumpopts |= JV_PRINT_ASCII;
+  if (options & COLOR_OUTPUT) dumpopts |= JV_PRINT_COLOR;
+  if (options & NO_COLOR_OUTPUT) dumpopts &= ~JV_PRINT_COLOR;
 
-	// Initialize Z80
-	resetZ80();
+  if (!jq_set_colors(getenv("JQ_COLORS")))
+      fprintf(stderr, "Failed to set $JQ_COLORS\n");
 
-	// Main loop
-	while(1){
-		// Timer is not used for Fuzix emulator.
-		// Z80 CPU will work at the highest speed, that is ~2.3 MHz
-		execZ80infinite();
-	}
+  if (jv_get_kind(lib_search_paths) == JV_KIND_NULL) {
+    // Default search path list
+    lib_search_paths = JV_ARRAY(jv_string("~/.jq"),
+                                jv_string("$ORIGIN/../lib/jq"),
+                                jv_string("$ORIGIN/../lib"));
+  }
+  jq_set_attr(jq, jv_string("JQ_LIBRARY_PATH"), lib_search_paths);
+
+  char *origin = strdup(argv[0]);
+  if (origin == NULL) {
+    fprintf(stderr, "jq: error: out of memory\n");
+    exit(1);
+  }
+  jq_set_attr(jq, jv_string("JQ_ORIGIN"), jv_string(dirname(origin)));
+  free(origin);
+
+  if (strchr(JQ_VERSION, '-') == NULL)
+    jq_set_attr(jq, jv_string("VERSION_DIR"), jv_string(JQ_VERSION));
+  else
+    jq_set_attr(jq, jv_string("VERSION_DIR"), jv_string_fmt("%.*s-master", (int)(strchr(JQ_VERSION, '-') - JQ_VERSION), JQ_VERSION));
+
+#ifdef USE_ISATTY
+  if (!program && !(options & FROM_FILE) && (!isatty(STDOUT_FILENO) || !isatty(STDIN_FILENO)))
+    program = ".";
+#endif
+
+  if (!program) usage(2, 1);
+
+  if (options & FROM_FILE) {
+    char *program_origin = strdup(program);
+    if (program_origin == NULL) {
+      perror("malloc");
+      exit(2);
+    }
+
+    jv data = jv_load_file(program, 1);
+    if (!jv_is_valid(data)) {
+      data = jv_invalid_get_msg(data);
+      fprintf(stderr, "jq: %s\n", jv_string_value(data));
+      free(program_origin);
+      jv_free(data);
+      ret = JQ_ERROR_SYSTEM;
+      goto out;
+    }
+    jq_set_attr(jq, jv_string("PROGRAM_ORIGIN"), jq_realpath(jv_string(dirname(program_origin))));
+    ARGS = JV_OBJECT(jv_string("positional"), ARGS,
+                     jv_string("named"), jv_copy(program_arguments));
+    program_arguments = jv_object_set(program_arguments, jv_string("ARGS"), jv_copy(ARGS));
+    if (!jv_object_has(jv_copy(program_arguments), jv_string("JQ_BUILD_CONFIGURATION")))
+      program_arguments = jv_object_set(program_arguments,
+                                        jv_string("JQ_BUILD_CONFIGURATION"),
+                                        jv_string(JQ_CONFIG)); /* named arguments */
+    compiled = jq_compile_args(jq, jv_string_value(data), jv_copy(program_arguments));
+    free(program_origin);
+    jv_free(data);
+  } else {
+    jq_set_attr(jq, jv_string("PROGRAM_ORIGIN"), jq_realpath(jv_string("."))); // XXX is this good?
+    ARGS = JV_OBJECT(jv_string("positional"), ARGS,
+                     jv_string("named"), jv_copy(program_arguments));
+    program_arguments = jv_object_set(program_arguments, jv_string("ARGS"), jv_copy(ARGS));
+    if (!jv_object_has(jv_copy(program_arguments), jv_string("JQ_BUILD_CONFIGURATION")))
+      program_arguments = jv_object_set(program_arguments,
+                                        jv_string("JQ_BUILD_CONFIGURATION"),
+                                        jv_string(JQ_CONFIG)); /* named arguments */
+    compiled = jq_compile_args(jq, program, jv_copy(program_arguments));
+  }
+  if (!compiled){
+    ret = JQ_ERROR_COMPILE;
+    goto out;
+  }
+
+  if (options & DUMP_DISASM) {
+    jq_dump_disassembly(jq, 0);
+    printf("\n");
+  }
+
+  if ((options & SEQ))
+    parser_flags |= JV_PARSE_SEQ;
+
+  if ((options & RAW_INPUT))
+    jq_util_input_set_parser(input_state, NULL, (options & SLURP) ? 1 : 0);
+  else
+    jq_util_input_set_parser(input_state, jv_parser_new(parser_flags), (options & SLURP) ? 1 : 0);
+
+  // Let jq program read from inputs
+  jq_set_input_cb(jq, jq_util_input_next_input_cb, input_state);
+
+  // Let jq program call `debug` builtin and have that go somewhere
+  jq_set_debug_cb(jq, debug_cb, &dumpopts);
+
+  // Let jq program call `stderr` builtin and have that go somewhere
+  jq_set_stderr_cb(jq, stderr_cb, &dumpopts);
+
+  if (nfiles == 0)
+    jq_util_input_add_input(input_state, "-");
+
+  if (options & PROVIDE_NULL) {
+    ret = process(jq, jv_null(), jq_flags, dumpopts, options);
+  } else {
+    jv value;
+    while (jq_util_input_errors(input_state) == 0 &&
+           (jv_is_valid((value = jq_util_input_next_input(input_state))) || jv_invalid_has_msg(jv_copy(value)))) {
+      if (jv_is_valid(value)) {
+        ret = process(jq, value, jq_flags, dumpopts, options);
+        if (ret <= 0 && ret != JQ_OK_NO_OUTPUT)
+          last_result = (ret != JQ_OK_NULL_KIND);
+        if (jq_halted(jq))
+          break;
+        continue;
+      }
+
+      // Parse error
+      jv msg = jv_invalid_get_msg(value);
+      if (!(options & SEQ)) {
+        ret = JQ_ERROR_UNKNOWN;
+        fprintf(stderr, "jq: parse error: %s\n", jv_string_value(msg));
+        jv_free(msg);
+        break;
+      }
+      // --seq -> errors are not fatal
+      fprintf(stderr, "jq: ignoring parse error: %s\n", jv_string_value(msg));
+      jv_free(msg);
+    }
+  }
+
+  if (jq_util_input_errors(input_state) != 0)
+    ret = JQ_ERROR_SYSTEM;
+
+out:
+  badwrite = ferror(stdout);
+  if (fclose(stdout)!=0 || badwrite) {
+    fprintf(stderr,"jq: error: writing output failed: %s\n", strerror(errno));
+    ret = JQ_ERROR_SYSTEM;
+  }
+
+  jv_free(ARGS);
+  jv_free(program_arguments);
+  jq_util_input_free(&input_state);
+  jq_teardown(&jq);
+
+  if (options & EXIT_STATUS) {
+    if (ret != JQ_OK_NO_OUTPUT)
+      jq_exit_with_status(ret);
+    else
+      switch (last_result) {
+        case -1: jq_exit_with_status(JQ_OK_NO_OUTPUT);
+        case  0: jq_exit_with_status(JQ_OK_NULL_KIND);
+        default: jq_exit_with_status(JQ_OK);
+      }
+  } else
+    jq_exit(ret);
 }
